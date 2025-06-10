@@ -20,6 +20,9 @@ go.work
 # CLI Snitch binary
 cli-snitch
 
+# Build directory
+build/
+
 # Runtime files
 *.log
 *.pid

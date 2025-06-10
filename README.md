@@ -13,19 +13,44 @@ A macOS network connection monitor and firewall manager for the terminal. CLI Sn
 
 ## Installation
 
-### Prerequisites
+### Via Homebrew (Recommended)
 
-- macOS (tested on macOS Sonoma and later)
-- Go 1.19 or later
-- Root privileges (required for network monitoring and firewall management)
+```bash
+# Add the tap
+brew tap yourusername/tap
+
+# Install CLI Snitch
+brew install cli-snitch
+```
+
+### Via GitHub Releases
+
+1. Download the latest release for your architecture from [GitHub Releases](https://github.com/yourusername/cli-snitch/releases)
+2. Extract the binary:
+   ```bash
+   tar -xzf cli-snitch-v1.0.0-darwin-amd64.tar.gz
+   ```
+3. Move to your PATH:
+   ```bash
+   sudo mv cli-snitch /usr/local/bin/
+   chmod +x /usr/local/bin/cli-snitch
+   ```
 
 ### Build from source
 
 ```bash
 git clone https://github.com/yourusername/cli-snitch
 cd cli-snitch
-go build -o cli-snitch ./cmd/cli-snitch
+make build
+# Or manually:
+# go build -o cli-snitch ./cmd/cli-snitch
 ```
+
+### Prerequisites
+
+- macOS (tested on macOS Sonoma and later)
+- Root privileges (required for network monitoring and firewall management)
+- Go 1.19+ (only needed if building from source)
 
 ## Usage
 
