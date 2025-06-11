@@ -178,7 +178,7 @@ When you release a new version:
    git push origin main
    ```
 
-## Advanced Features
+## Additional Features
 
 ### Version Pinning
 

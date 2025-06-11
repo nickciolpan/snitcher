@@ -71,7 +71,7 @@ jobs:
           ```
           
           ### What's New
-          - See [RELEASE_NOTES.md](https://github.com/yourusername/cli-snitch/blob/main/RELEASE_NOTES.md) for full details
+          - See [RELEASE_NOTES.md](https://github.com/nickciolpan/cli-snitch/blob/main/RELEASE_NOTES.md) for full details
           
           ### System Requirements
           - macOS (tested on Sonoma and later)

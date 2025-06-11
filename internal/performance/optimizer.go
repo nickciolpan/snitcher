@@ -245,8 +245,8 @@ func (fcm *FastConnectionMatcher) FindByPort(port string) []*monitor.Connection 
 	return result
 }
 
-// OptimizedConnectionProcessor provides connection processing
-type OptimizedConnectionProcessor struct {
+// ConnectionProcessor provides connection processing
+type ConnectionProcessor struct {
 	cache         *ConnectionCache
 	matcher       *FastConnectionMatcher
 	processPool   *sync.Pool
@@ -257,8 +257,8 @@ type OptimizedConnectionProcessor struct {
 	logger        *logger.Logger
 }
 
-// NewOptimizedConnectionProcessor creates a connection processor
-func NewOptimizedConnectionProcessor(cacheSize int, cacheTTL time.Duration, batchSize int) *OptimizedConnectionProcessor {
+// NewConnectionProcessor creates a connection processor
+func NewConnectionProcessor(cacheSize int, cacheTTL time.Duration, batchSize int) *ConnectionProcessor {
 	logConfig := logger.Config{
 		Level:     logger.INFO,
 		Component: "processor",
@@ -279,7 +279,7 @@ func NewOptimizedConnectionProcessor(cacheSize int, cacheTTL time.Duration, batc
 		},
 	}
 	
-	return &OptimizedConnectionProcessor{
+	return &ConnectionProcessor{
 		cache:        NewConnectionCache(cacheSize, cacheTTL),
 		matcher:      NewFastConnectionMatcher(),
 		processPool:  processPool,
@@ -297,7 +297,7 @@ type ProcessingContext struct {
 }
 
 // ProcessConnection processes a connection
-func (ocp *OptimizedConnectionProcessor) ProcessConnection(conn *monitor.Connection, callback func(*monitor.Connection)) {
+func (ocp *ConnectionProcessor) ProcessConnection(conn *monitor.Connection, callback func(*monitor.Connection)) {
 	startTime := time.Now()
 	
 	// Get processing context from pool
@@ -343,7 +343,7 @@ func (ocp *OptimizedConnectionProcessor) ProcessConnection(conn *monitor.Connect
 }
 
 // addToBatch adds connection to batch processing queue
-func (ocp *OptimizedConnectionProcessor) addToBatch(conn *monitor.Connection, callback func(*monitor.Connection)) {
+func (ocp *ConnectionProcessor) addToBatch(conn *monitor.Connection, callback func(*monitor.Connection)) {
 	ocp.batchMu.Lock()
 	defer ocp.batchMu.Unlock()
 	
@@ -356,7 +356,7 @@ func (ocp *OptimizedConnectionProcessor) addToBatch(conn *monitor.Connection, ca
 }
 
 // processBatch processes a batch of connections efficiently
-func (ocp *OptimizedConnectionProcessor) processBatch(callback func(*monitor.Connection)) {
+func (ocp *ConnectionProcessor) processBatch(callback func(*monitor.Connection)) {
 	if len(ocp.pendingBatch) == 0 {
 		return
 	}
@@ -382,7 +382,7 @@ func (ocp *OptimizedConnectionProcessor) processBatch(callback func(*monitor.Con
 }
 
 // FlushPendingBatch processes any remaining connections in the batch
-func (ocp *OptimizedConnectionProcessor) FlushPendingBatch(callback func(*monitor.Connection)) {
+func (ocp *ConnectionProcessor) FlushPendingBatch(callback func(*monitor.Connection)) {
 	ocp.batchMu.Lock()
 	defer ocp.batchMu.Unlock()
 	
@@ -392,13 +392,13 @@ func (ocp *OptimizedConnectionProcessor) FlushPendingBatch(callback func(*monito
 }
 
 // generateConnectionKey creates a connection key
-func (ocp *OptimizedConnectionProcessor) generateConnectionKey(conn *monitor.Connection) string {
+func (ocp *ConnectionProcessor) generateConnectionKey(conn *monitor.Connection) string {
 	// Pre-allocate string builder with estimated capacity
 	return conn.ProcessName + ":" + conn.RemoteAddr + ":" + conn.RemotePort
 }
 
 // GetStats returns processor statistics
-func (ocp *OptimizedConnectionProcessor) GetStats() map[string]interface{} {
+func (ocp *ConnectionProcessor) GetStats() map[string]interface{} {
 	ocp.batchMu.Lock()
 	pendingCount := len(ocp.pendingBatch)
 	ocp.batchMu.Unlock()
@@ -419,7 +419,7 @@ func (ocp *OptimizedConnectionProcessor) GetStats() map[string]interface{} {
 }
 
 // Cleanup performs maintenance operations
-func (ocp *OptimizedConnectionProcessor) Cleanup() {
+func (ocp *ConnectionProcessor) Cleanup() {
 	if ocp.logger != nil {
 		ocp.logger.Debug("Starting processor cleanup")
 	}
@@ -434,7 +434,7 @@ func (ocp *OptimizedConnectionProcessor) Cleanup() {
 
 // PerformanceOptimizer provides system-wide performance optimizations
 type PerformanceOptimizer struct {
-	processor    *OptimizedConnectionProcessor
+	processor    *ConnectionProcessor
 	cleanupTimer *time.Timer
 	logger       *logger.Logger
 }
@@ -453,7 +453,7 @@ func NewPerformanceOptimizer() *PerformanceOptimizer {
 	}
 	
 	// Create processor with tuned parameters
-	processor := NewOptimizedConnectionProcessor(
+	processor := NewConnectionProcessor(
 		10000,              // Cache size
 		5*time.Minute,      // Cache TTL
 		100,                // Batch size

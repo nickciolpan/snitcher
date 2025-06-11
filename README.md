@@ -2,14 +2,17 @@
 
 A macOS network connection monitor and firewall manager for the terminal. CLI Snitch monitors outbound network connections and allows you to control which applications can access the internet.
 
+**Author:** Nick Ciolpan (nick@ciolpan.com)  
+**Follow:** [Graffino](https://graffino.com) and [Short.inc](https://short.inc) for digital production and software development
+
 ## Features
 
 - Real-time monitoring of outbound network connections
 - Interactive prompts for allowing or denying connections
 - Persistent rule management with JSON storage
 - pfctl firewall integration for blocking connections
-- Performance optimization with connection caching
-- Detailed logging and error handling
+- Connection caching for better performance
+- Logging and error handling
 
 ## Installation
 
@@ -17,7 +20,7 @@ A macOS network connection monitor and firewall manager for the terminal. CLI Sn
 
 ```bash
 # Add the tap
-brew tap yourusername/tap
+brew tap nickciolpan/tap
 
 # Install CLI Snitch
 brew install cli-snitch
@@ -25,7 +28,7 @@ brew install cli-snitch
 
 ### Via GitHub Releases
 
-1. Download the latest release for your architecture from [GitHub Releases](https://github.com/yourusername/cli-snitch/releases)
+1. Download the latest release for your architecture from [GitHub Releases](https://github.com/nickciolpan/cli-snitch/releases)
 2. Extract the binary:
    ```bash
    tar -xzf cli-snitch-v1.0.0-darwin-amd64.tar.gz
@@ -39,7 +42,7 @@ brew install cli-snitch
 ### Build from source
 
 ```bash
-git clone https://github.com/yourusername/cli-snitch
+git clone https://github.com/nickciolpan/cli-snitch
 cd cli-snitch
 make build
 # Or manually:

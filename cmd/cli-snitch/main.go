@@ -111,10 +111,8 @@ var watchCmd = &cobra.Command{
 		connectionMonitor := monitor.NewConnectionMonitor(func(conn *monitor.Connection) {
 			systemStats.ConnectionsDetected++
 			
-			// Use performance optimizer for efficient connection processing
-			performanceOptimizer.OptimizeConnection(conn, func(optimizedConn *monitor.Connection) {
-				handleNewConnection(optimizedConn, ruleManager, connectionPrompter, firewallManager, systemStats)
-			})
+			// Direct callback for interactive monitoring
+			handleNewConnection(conn, ruleManager, connectionPrompter, firewallManager, systemStats)
 		})
 		
 		// Create context for graceful shutdown
@@ -153,7 +151,7 @@ var watchCmd = &cobra.Command{
 						fmt.Printf("%s Failed to save rules during cleanup: %v\n", yellow("⚠️"), err)
 					}
 					
-					fmt.Printf("%s System maintenance completed | Memory usage optimized\n", faint("🧹"))
+					fmt.Printf("%s System maintenance completed\n", faint("🧹"))
 				}
 			}
 		}()

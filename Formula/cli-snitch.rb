@@ -1,10 +1,10 @@
 class CliSnitch < Formula
   desc "Terminal-based network connection monitor and firewall manager for macOS"
-  homepage "https://github.com/yourusername/cli-snitch"
-  url "https://github.com/yourusername/cli-snitch/archive/refs/tags/v1.0.0.tar.gz"
+  homepage "https://github.com/nickciolpan/cli-snitch"
+  url "https://github.com/nickciolpan/cli-snitch/archive/refs/tags/v1.0.0.tar.gz"
   sha256 "REPLACE_WITH_ACTUAL_SHA256"
   license "MIT"
-  head "https://github.com/yourusername/cli-snitch.git", branch: "main"
+  head "https://github.com/nickciolpan/cli-snitch.git", branch: "main"
 
   depends_on "go" => :build
 
