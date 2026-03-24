@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   release:
     runs-on: macos-latest
@@ -13,97 +16,50 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Set up Go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v5
       with:
-        go-version: '1.21'
+        go-version: '1.24'
+
+    - name: Run tests
+      run: go test ./...
 
     - name: Get version
       id: version
       run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
     - name: Build binaries
-      run: make build-all
-
-    - name: Create packages
-      run: make package
-
-    - name: Generate checksums
       run: |
-        cd build/packages
-        shasum -a 256 *.tar.gz > checksums.txt
+        mkdir -p build/packages
+        GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o build/cli-snitch-amd64 ./cmd/cli-snitch
+        GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o build/cli-snitch-arm64 ./cmd/cli-snitch
+        cd build
+        tar -czf packages/cli-snitch-${{ steps.version.outputs.version }}-darwin-amd64.tar.gz -C . cli-snitch-amd64
+        tar -czf packages/cli-snitch-${{ steps.version.outputs.version }}-darwin-arm64.tar.gz -C . cli-snitch-arm64
+        cd packages && shasum -a 256 *.tar.gz > checksums.txt
 
     - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      uses: softprops/action-gh-release@v2
       with:
-        tag_name: ${{ github.ref }}
-        release_name: CLI Snitch ${{ steps.version.outputs.version }}
-        draft: false
-        prerelease: false
+        name: CLI Snitch ${{ steps.version.outputs.version }}
         body: |
           ## CLI Snitch ${{ steps.version.outputs.version }}
-          
-          ### Installation
-          
-          **Via Homebrew (Recommended):**
+
+          ### Install via Homebrew
           ```bash
-          brew tap yourusername/tap
+          brew tap nickciolpan/tap
           brew install cli-snitch
           ```
-          
-          **Manual Installation:**
-          1. Download the appropriate binary for your architecture
-          2. Extract and move to `/usr/local/bin/`
-          3. Make executable: `chmod +x /usr/local/bin/cli-snitch`
-          
-          ### Usage
+
+          ### Manual install
+          1. Download the binary for your architecture below
+          2. Extract: `tar -xzf cli-snitch-*.tar.gz`
+          3. Move: `sudo mv cli-snitch-* /usr/local/bin/cli-snitch && chmod +x /usr/local/bin/cli-snitch`
+
+          ### Quick start
           ```bash
-          # Start monitoring (requires sudo)
           sudo cli-snitch watch
-          
-          # Check system status
-          cli-snitch system-status
-          
-          # List rules
-          cli-snitch list-rules
           ```
-          
-          ### What's New
-          - See [RELEASE_NOTES.md](https://github.com/nickciolpan/cli-snitch/blob/main/RELEASE_NOTES.md) for full details
-          
-          ### System Requirements
-          - macOS (tested on Sonoma and later)
-          - Root privileges for network monitoring
-          - pfctl for firewall integration
-
-    - name: Upload Darwin AMD64 Binary
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./build/packages/cli-snitch-${{ steps.version.outputs.version }}-darwin-amd64.tar.gz
-        asset_name: cli-snitch-${{ steps.version.outputs.version }}-darwin-amd64.tar.gz
-        asset_content_type: application/gzip
-
-    - name: Upload Darwin ARM64 Binary
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./build/packages/cli-snitch-${{ steps.version.outputs.version }}-darwin-arm64.tar.gz
-        asset_name: cli-snitch-${{ steps.version.outputs.version }}-darwin-arm64.tar.gz
-        asset_content_type: application/gzip
-
-    - name: Upload Checksums
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./build/packages/checksums.txt
-        asset_name: checksums.txt
-        asset_content_type: text/plain 
+        files: |
+          build/packages/cli-snitch-${{ steps.version.outputs.version }}-darwin-amd64.tar.gz
+          build/packages/cli-snitch-${{ steps.version.outputs.version }}-darwin-arm64.tar.gz
+          build/packages/checksums.txt
