@@ -3,7 +3,7 @@
 A macOS network connection monitor and firewall manager for the terminal. CLI Snitch monitors outbound network connections and allows you to control which applications can access the internet.
 
 **Author:** Nick Ciolpan (nick@ciolpan.com)  
-**Follow:** [Graffino](https://graffino.com) and [Short.inc](https://short.inc) for digital production and software development
+**Follow:** [Graffino](https://graffino.com) for digital production and software development
 
 ## Features
 
