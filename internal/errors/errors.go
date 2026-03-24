@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -235,6 +236,8 @@ func NewParsingError(message string, input string, cause error) *CLISnitchError 
 type ErrorHandler struct {
 	errorChan chan *CLISnitchError
 	handlers  map[ErrorType]func(*CLISnitchError)
+	done      chan struct{}
+	once      sync.Once
 }
 
 // NewErrorHandler creates a new error handler
@@ -242,6 +245,7 @@ func NewErrorHandler() *ErrorHandler {
 	return &ErrorHandler{
 		errorChan: make(chan *CLISnitchError, 100),
 		handlers:  make(map[ErrorType]func(*CLISnitchError)),
+		done:      make(chan struct{}),
 	}
 }
 
@@ -263,6 +267,7 @@ func (eh *ErrorHandler) Handle(err *CLISnitchError) {
 // Start begins error processing
 func (eh *ErrorHandler) Start() {
 	go func() {
+		defer close(eh.done)
 		for err := range eh.errorChan {
 			eh.Handle(err)
 		}
@@ -279,9 +284,15 @@ func (eh *ErrorHandler) Submit(err *CLISnitchError) {
 	}
 }
 
-// Close closes the error handler
+// Close closes the error handler and waits for pending errors to drain
 func (eh *ErrorHandler) Close() {
-	close(eh.errorChan)
+	eh.once.Do(func() {
+		close(eh.errorChan)
+	})
+	select {
+	case <-eh.done:
+	case <-time.After(5 * time.Second):
+	}
 }
 
 // Recovery strategies

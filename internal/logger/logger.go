@@ -284,7 +284,29 @@ func (l *Logger) Rotate() error {
 	}
 	
 	l.logFile = file
+
+	// Update all internal loggers to write to the new file
+	l.debugLog.SetOutput(file)
+	l.infoLog.SetOutput(file)
+	l.warnLog.SetOutput(file)
+	l.errorLog.SetOutput(file)
+
 	l.Info("Log file rotated successfully")
-	
+
+	return nil
+}
+
+// RotateIfNeeded rotates the log file if it exceeds maxSizeMB megabytes.
+func (l *Logger) RotateIfNeeded(maxSizeMB int) error {
+	if l.logFile == nil {
+		return nil
+	}
+	info, err := l.logFile.Stat()
+	if err != nil {
+		return err
+	}
+	if info.Size() > int64(maxSizeMB)*1024*1024 {
+		return l.Rotate()
+	}
 	return nil
 } 

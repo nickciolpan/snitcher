@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"sort"
 	"sync"
 	"time"
 
@@ -418,13 +419,14 @@ func calculatePercentile(durations []time.Duration, percentile int) time.Duratio
 	if len(durations) == 0 {
 		return 0
 	}
-	
-	// Simple percentile calculation (would normally sort first)
-	index := (len(durations) * percentile) / 100
-	if index >= len(durations) {
-		index = len(durations) - 1
+	sorted := make([]time.Duration, len(durations))
+	copy(sorted, durations)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+	index := (len(sorted) * percentile) / 100
+	if index >= len(sorted) {
+		index = len(sorted) - 1
 	}
-	return durations[index]
+	return sorted[index]
 }
 
 func findMax(values []float64) float64 {

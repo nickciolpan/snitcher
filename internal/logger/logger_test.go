@@ -1,7 +1,6 @@
 package logger
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -75,9 +74,6 @@ func TestLoggerWithFile(t *testing.T) {
 }
 
 func TestLogLevels(t *testing.T) {
-	// Test log level filtering
-	var buf bytes.Buffer
-	
 	config := Config{
 		Level:     WARN,
 		Component: "leveltest",

@@ -18,7 +18,7 @@
 go.work
 
 # CLI Snitch binary
-cli-snitch
+/cli-snitch
 
 # Build directory
 build/
@@ -46,4 +46,7 @@ temp/
 config.local.*
 
 # User data directory
-.cli-snitch/ 
+.cli-snitch/
+
+# Claude
+.claude/

@@ -6,11 +6,17 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
-	
-	"cli-snitch/rules"
+
 	"cli-snitch/prompt"
+	"cli-snitch/rules"
+)
+
+var (
+	hostPattern = regexp.MustCompile(`^[a-zA-Z0-9._:\-]+$`)
+	portPattern = regexp.MustCompile(`^[0-9]+$`)
 )
 
 // FirewallManager handles pfctl firewall integration
@@ -148,8 +154,11 @@ func (fm *FirewallManager) AddBlockRule(rule *FirewallRule) error {
 	}
 	
 	// Generate pfctl rule syntax
-	pfRule := fm.generatePfRule(rule)
-	
+	pfRule, err := fm.generatePfRule(rule)
+	if err != nil {
+		return fmt.Errorf("failed to generate pf rule: %v", err)
+	}
+
 	// Add rule to anchor file with expiration if applicable
 	if err := fm.appendRuleToAnchor(pfRule, rule.Description, rule.ExpiresAt); err != nil {
 		return fmt.Errorf("failed to add rule to anchor: %v", err)
@@ -163,55 +172,85 @@ func (fm *FirewallManager) AddBlockRule(rule *FirewallRule) error {
 	return nil
 }
 
-// generatePfRule creates pfctl rule syntax from our rule structure
-func (fm *FirewallManager) generatePfRule(rule *FirewallRule) string {
+// sanitizeValue validates a host or port value for safe use in pfctl rules.
+// For hosts, only alphanumeric characters, dots, colons, hyphens, and underscores are allowed.
+// For ports, only numeric characters are allowed.
+func sanitizeValue(value string, isPort bool) (string, error) {
+	if value == "" {
+		return "", nil
+	}
+	if isPort {
+		if !portPattern.MatchString(value) {
+			return "", fmt.Errorf("invalid port value %q: only numeric characters allowed", value)
+		}
+	} else {
+		if !hostPattern.MatchString(value) {
+			return "", fmt.Errorf("invalid host value %q: only alphanumeric, dots, colons, hyphens, and underscores allowed", value)
+		}
+	}
+	return value, nil
+}
+
+// generatePfRule creates pfctl rule syntax from our rule structure.
+// It sanitizes host and port values before building the command string.
+func (fm *FirewallManager) generatePfRule(rule *FirewallRule) (string, error) {
+	// Sanitize host and port values
+	host, err := sanitizeValue(rule.Host, false)
+	if err != nil {
+		return "", fmt.Errorf("host sanitization failed: %w", err)
+	}
+	port, err := sanitizeValue(rule.Port, true)
+	if err != nil {
+		return "", fmt.Errorf("port sanitization failed: %w", err)
+	}
+
 	var parts []string
-	
+
 	// Action
 	parts = append(parts, rule.Action)
-	
+
 	// Direction
 	if rule.Direction != "" {
 		parts = append(parts, rule.Direction)
 	}
-	
+
 	// Interface (if specified)
 	if rule.Interface != "" {
 		parts = append(parts, "on", rule.Interface)
 	}
-	
+
 	// Protocol
 	if rule.Protocol != "" {
 		parts = append(parts, "proto", rule.Protocol)
 	}
-	
+
 	// Source/destination based on direction
 	if rule.Direction == "out" {
 		// Outbound: from any to destination
 		parts = append(parts, "from", "any", "to")
-		if rule.Host != "" && rule.Port != "" {
-			parts = append(parts, rule.Host, "port", rule.Port)
-		} else if rule.Host != "" {
-			parts = append(parts, rule.Host)
-		} else if rule.Port != "" {
-			parts = append(parts, "any", "port", rule.Port)
+		if host != "" && port != "" {
+			parts = append(parts, host, "port", port)
+		} else if host != "" {
+			parts = append(parts, host)
+		} else if port != "" {
+			parts = append(parts, "any", "port", port)
 		} else {
 			parts = append(parts, "any")
 		}
 	} else {
 		// Inbound or unspecified: from source to any
 		parts = append(parts, "from")
-		if rule.Host != "" && rule.Port != "" {
-			parts = append(parts, rule.Host, "port", rule.Port)
-		} else if rule.Host != "" {
-			parts = append(parts, rule.Host)
+		if host != "" && port != "" {
+			parts = append(parts, host, "port", port)
+		} else if host != "" {
+			parts = append(parts, host)
 		} else {
 			parts = append(parts, "any")
 		}
 		parts = append(parts, "to", "any")
 	}
-	
-	return strings.Join(parts, " ")
+
+	return strings.Join(parts, " "), nil
 }
 
 // appendRuleToAnchor adds a rule to the anchor file with optional expiration
@@ -385,7 +424,7 @@ func (fm *FirewallManager) CleanupExpiredRules() error {
 	
 	for i := 0; i < len(lines); i++ {
 		line := strings.TrimSpace(lines[i])
-		
+
 		// Check if this is a rule with expiration
 		if strings.Contains(line, "# CLI-Snitch-Expires:") {
 			// Extract expiration time from comment
@@ -394,7 +433,24 @@ func (fm *FirewallManager) CleanupExpiredRules() error {
 				expiryStr := strings.TrimSpace(parts[1])
 				if expiryTime, err := time.Parse(time.RFC3339, expiryStr); err == nil {
 					if now.After(expiryTime) {
-						// Rule has expired, skip this line and the next (the actual rule)
+						// Rule has expired. The anchor format is:
+						//   line i-1: # description comment
+						//   line i:   # CLI-Snitch-Expires: ...
+						//   line i+1: the actual pf rule
+						// Remove the description comment that precedes this expiration line
+						// (if it exists and is a comment, and not the file header).
+						if len(validLines) > 0 {
+							prev := strings.TrimSpace(validLines[len(validLines)-1])
+							if strings.HasPrefix(prev, "#") &&
+								!strings.Contains(prev, "CLI Snitch Firewall Rules") &&
+								!strings.Contains(prev, "do not edit manually") &&
+								!strings.Contains(prev, "Generated at") &&
+								!strings.Contains(prev, "Set interface") &&
+								!strings.Contains(prev, "Default:") &&
+								!strings.Contains(prev, "CLI Snitch rules will be added") {
+								validLines = validLines[:len(validLines)-1]
+							}
+						}
 						removedCount++
 						if i+1 < len(lines) {
 							i++ // Skip the actual rule line too
@@ -404,7 +460,7 @@ func (fm *FirewallManager) CleanupExpiredRules() error {
 				}
 			}
 		}
-		
+
 		validLines = append(validLines, line)
 	}
 	
@@ -478,7 +534,7 @@ func (fm *FirewallManager) GetConfigFile() string {
 }
 
 // GeneratePfRule converts a FirewallRule to pfctl syntax (public method)
-func (fm *FirewallManager) GeneratePfRule(rule *FirewallRule) string {
+func (fm *FirewallManager) GeneratePfRule(rule *FirewallRule) (string, error) {
 	return fm.generatePfRule(rule)
 }
 
@@ -488,5 +544,34 @@ func (fm *FirewallManager) CheckPfctlAvailable() error {
 	if err != nil {
 		return fmt.Errorf("pfctl not found in PATH: %w", err)
 	}
+	return nil
+}
+
+// LogAction writes a connection action to the firewall log file at ~/.cli-snitch/firewall.log.
+func (fm *FirewallManager) LogAction(processName, host, port, action string) error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to determine home directory: %w", err)
+	}
+
+	logDir := filepath.Join(homeDir, ".cli-snitch")
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return fmt.Errorf("failed to create log directory: %w", err)
+	}
+
+	logFile := filepath.Join(logDir, "firewall.log")
+	f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open log file: %w", err)
+	}
+	defer f.Close()
+
+	entry := fmt.Sprintf("[%s] process=%s host=%s port=%s action=%s\n",
+		time.Now().Format(time.RFC3339), processName, host, port, action)
+
+	if _, err := f.WriteString(entry); err != nil {
+		return fmt.Errorf("failed to write log entry: %w", err)
+	}
+
 	return nil
 } 

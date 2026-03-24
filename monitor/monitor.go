@@ -3,11 +3,17 @@ package monitor
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
+	"net"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"cli-snitch/internal/errors"
@@ -16,16 +22,202 @@ import (
 
 // Connection represents a network connection detected by the monitor
 type Connection struct {
-	PID         int       `json:"pid"`
-	ProcessName string    `json:"process_name"`
-	User        string    `json:"user"`
-	Protocol    string    `json:"protocol"`
-	LocalAddr   string    `json:"local_addr"`
-	LocalPort   string    `json:"local_port"`
-	RemoteAddr  string    `json:"remote_addr"`
-	RemotePort  string    `json:"remote_port"`
-	State       string    `json:"state"`
-	Timestamp   time.Time `json:"timestamp"`
+	PID          int       `json:"pid"`
+	ProcessName  string    `json:"process_name"`
+	User         string    `json:"user"`
+	Protocol     string    `json:"protocol"`
+	LocalAddr    string    `json:"local_addr"`
+	LocalPort    string    `json:"local_port"`
+	RemoteAddr   string    `json:"remote_addr"`
+	RemotePort   string    `json:"remote_port"`
+	State        string    `json:"state"`
+	Timestamp    time.Time `json:"timestamp"`
+	ResolvedHost string    `json:"resolved_host,omitempty"`
+}
+
+// HistoryEntry represents a logged connection event
+type HistoryEntry struct {
+	PID          int       `json:"pid"`
+	ProcessName  string    `json:"process_name"`
+	User         string    `json:"user"`
+	Protocol     string    `json:"protocol"`
+	LocalAddr    string    `json:"local_addr"`
+	LocalPort    string    `json:"local_port"`
+	RemoteAddr   string    `json:"remote_addr"`
+	RemotePort   string    `json:"remote_port"`
+	State        string    `json:"state"`
+	ResolvedHost string    `json:"resolved_host,omitempty"`
+	Action       string    `json:"action"`
+	Timestamp    time.Time `json:"timestamp"`
+}
+
+// ConnectionHistory stores connections to a JSON Lines file
+type ConnectionHistory struct {
+	filePath string
+	mu       sync.Mutex
+}
+
+// NewConnectionHistory creates a new ConnectionHistory that writes to ~/.cli-snitch/history.jsonl
+func NewConnectionHistory() (*ConnectionHistory, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get home directory: %v", err)
+	}
+
+	dir := filepath.Join(homeDir, ".cli-snitch")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create history directory: %v", err)
+	}
+
+	return &ConnectionHistory{
+		filePath: filepath.Join(dir, "history.jsonl"),
+	}, nil
+}
+
+// NewConnectionHistoryWithPath creates a ConnectionHistory with a custom file path (useful for testing)
+func NewConnectionHistoryWithPath(filePath string) *ConnectionHistory {
+	return &ConnectionHistory{
+		filePath: filePath,
+	}
+}
+
+// LogConnection appends a connection event to the history file
+func (ch *ConnectionHistory) LogConnection(conn *Connection, action string) error {
+	ch.mu.Lock()
+	defer ch.mu.Unlock()
+
+	entry := HistoryEntry{
+		PID:          conn.PID,
+		ProcessName:  conn.ProcessName,
+		User:         conn.User,
+		Protocol:     conn.Protocol,
+		LocalAddr:    conn.LocalAddr,
+		LocalPort:    conn.LocalPort,
+		RemoteAddr:   conn.RemoteAddr,
+		RemotePort:   conn.RemotePort,
+		State:        conn.State,
+		ResolvedHost: conn.ResolvedHost,
+		Action:       action,
+		Timestamp:    time.Now(),
+	}
+
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return fmt.Errorf("failed to marshal history entry: %v", err)
+	}
+
+	f, err := os.OpenFile(ch.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open history file: %v", err)
+	}
+	defer f.Close()
+
+	if _, err := f.Write(append(data, '\n')); err != nil {
+		return fmt.Errorf("failed to write history entry: %v", err)
+	}
+
+	return nil
+}
+
+// GetHistory reads the last N entries from the history file
+func (ch *ConnectionHistory) GetHistory(limit int) ([]HistoryEntry, error) {
+	ch.mu.Lock()
+	defer ch.mu.Unlock()
+
+	f, err := os.Open(ch.filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to open history file: %v", err)
+	}
+	defer f.Close()
+
+	var entries []HistoryEntry
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+		var entry HistoryEntry
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			continue // skip malformed lines
+		}
+		entries = append(entries, entry)
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read history file: %v", err)
+	}
+
+	// Return the last `limit` entries
+	if limit > 0 && len(entries) > limit {
+		entries = entries[len(entries)-limit:]
+	}
+
+	return entries, nil
+}
+
+// dnsCache stores resolved DNS lookups
+var dnsCache sync.Map
+
+// ReverseLookup performs a reverse DNS lookup on the given address with a 500ms timeout.
+// Results are cached to avoid repeated lookups.
+func ReverseLookup(addr string) string {
+	if addr == "" || addr == "*" {
+		return ""
+	}
+
+	// Check cache first
+	if cached, ok := dnsCache.Load(addr); ok {
+		return cached.(string)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	resolver := &net.Resolver{}
+	names, err := resolver.LookupAddr(ctx, addr)
+	if err != nil || len(names) == 0 {
+		dnsCache.Store(addr, "")
+		return ""
+	}
+
+	host := strings.TrimSuffix(names[0], ".")
+	dnsCache.Store(addr, host)
+	return host
+}
+
+// recentConnectionCache is a TTL-based cache for tracking recently seen connections.
+// It prevents re-prompting for connections that were cleaned from the main map but reappear.
+type recentConnectionCache struct {
+	entries map[string]time.Time
+	mu      sync.RWMutex
+	ttl     time.Duration
+}
+
+func newRecentConnectionCache(ttl time.Duration) *recentConnectionCache {
+	return &recentConnectionCache{
+		entries: make(map[string]time.Time),
+		ttl:     ttl,
+	}
+}
+
+func (rc *recentConnectionCache) get(key string) bool {
+	rc.mu.RLock()
+	defer rc.mu.RUnlock()
+	ts, ok := rc.entries[key]
+	if !ok {
+		return false
+	}
+	return time.Since(ts) <= rc.ttl
+}
+
+func (rc *recentConnectionCache) put(key string) {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	rc.entries[key] = time.Now()
 }
 
 // ConnectionMonitor tracks network connections and detects new outbound connections
@@ -35,6 +227,7 @@ type ConnectionMonitor struct {
 	lastCleanup        time.Time
 	connectionCount    int
 	maxConnections     int
+	recentCache        *recentConnectionCache
 	logger             *logger.Logger
 	errorHandler       *errors.ErrorHandler
 	recoveryManager    *errors.RecoveryManager
@@ -51,41 +244,42 @@ func NewConnectionMonitor(callback func(*Connection)) *ConnectionMonitor {
 		Console:   true,
 		LogFile:   "", // Can be configured later
 	}
-	
+
 	monitorLogger, err := logger.NewLogger(logConfig)
 	if err != nil {
 		// Fallback to basic logging if logger creation fails
 		fmt.Printf("Failed to create monitor logger: %v\n", err)
 		monitorLogger = nil
 	}
-	
+
 	// Initialize error handling
 	errorHandler := errors.NewErrorHandler()
 	recoveryManager := errors.NewRecoveryManager()
-	
+
 	cm := &ConnectionMonitor{
 		connections:        make(map[string]*Connection),
 		newConnCallback:    callback,
 		lastCleanup:        time.Now(),
 		connectionCount:    0,
 		maxConnections:     10000,
+		recentCache:        newRecentConnectionCache(5 * time.Minute),
 		logger:             monitorLogger,
 		errorHandler:       errorHandler,
 		recoveryManager:    recoveryManager,
 		consecutiveErrors:  0,
 		maxConsecutiveErrs: 5,
 	}
-	
+
 	// Setup error handlers
 	cm.setupErrorHandlers()
-	
+
 	// Start error handler
 	errorHandler.Start()
-	
+
 	if monitorLogger != nil {
 		monitorLogger.Info("Connection monitor initialized")
 	}
-	
+
 	return cm
 }
 
@@ -94,13 +288,13 @@ func (cm *ConnectionMonitor) setupErrorHandlers() {
 	if cm.errorHandler == nil {
 		return
 	}
-	
+
 	// Network error handler
 	cm.errorHandler.RegisterHandler(errors.ErrorTypeNetwork, func(err *errors.CLISnitchError) {
 		if cm.logger != nil {
 			cm.logger.ErrorWithDetails(err, "Network error in monitor", err.Context)
 		}
-		
+
 		// Attempt recovery for network errors
 		if err.Recoverable {
 			if recoveryErr := cm.recoveryManager.AttemptRecovery(err); recoveryErr == nil {
@@ -111,13 +305,13 @@ func (cm *ConnectionMonitor) setupErrorHandlers() {
 			}
 		}
 	})
-	
+
 	// Monitor error handler
 	cm.errorHandler.RegisterHandler(errors.ErrorTypeMonitor, func(err *errors.CLISnitchError) {
 		if cm.logger != nil {
 			cm.logger.ErrorWithDetails(err, "Monitor subsystem error", err.Context)
 		}
-		
+
 		cm.consecutiveErrors++
 		if cm.consecutiveErrors >= cm.maxConsecutiveErrs {
 			if cm.logger != nil {
@@ -125,7 +319,7 @@ func (cm *ConnectionMonitor) setupErrorHandlers() {
 			}
 		}
 	})
-	
+
 	// System error handler
 	cm.errorHandler.RegisterHandler(errors.ErrorTypeSystem, func(err *errors.CLISnitchError) {
 		if cm.logger != nil {
@@ -134,21 +328,32 @@ func (cm *ConnectionMonitor) setupErrorHandlers() {
 	})
 }
 
+// GetLogger returns the monitor's logger for external configuration.
+func (cm *ConnectionMonitor) GetLogger() *logger.Logger {
+	return cm.logger
+}
+
+// GetErrorCount returns the number of consecutive errors tracked by the monitor.
+// This is useful for CLI status displays.
+func (cm *ConnectionMonitor) GetErrorCount() int {
+	return cm.consecutiveErrors
+}
+
 // Close gracefully shuts down the monitor with proper cleanup
 func (cm *ConnectionMonitor) Close() error {
 	if cm.logger != nil {
 		cm.logger.Info("Shutting down connection monitor")
 	}
-	
+
 	if cm.errorHandler != nil {
 		cm.errorHandler.Close()
 	}
-	
+
 	if cm.logger != nil {
 		cm.logger.Info("Connection monitor shutdown complete")
 		return cm.logger.Close()
 	}
-	
+
 	return nil
 }
 
@@ -181,7 +386,8 @@ func parseConnectionLine(line string) (*Connection, error) {
 	// Find the connection info - look for TCP or UDP and the connection string
 	var connectionInfo string
 	for i, field := range fields {
-		if strings.Contains(field, "TCP") || strings.Contains(field, "UDP") {
+		upperField := strings.ToUpper(field)
+		if upperField == "TCP" || upperField == "UDP" {
 			conn.Protocol = strings.ToLower(field)
 			if i+1 < len(fields) {
 				connectionInfo = fields[i+1]
@@ -276,38 +482,38 @@ func parseAddress(addr string, ip *string, port *string) error {
 // GetCurrentConnections retrieves current network connections using lsof
 func (cm *ConnectionMonitor) GetCurrentConnections() ([]*Connection, error) {
 	startTime := time.Now()
-	
+
 	if cm.logger != nil {
 		cm.logger.Debug("Starting lsof command to retrieve network connections")
 	}
-	
-	// Run lsof to get network connections
-	cmd := exec.Command("lsof", "-i", "tcp", "-n")
+
+	// Run lsof to get both TCP and UDP network connections
+	cmd := exec.Command("lsof", "-i", "tcp", "-i", "udp", "-n")
 	output, err := cmd.Output()
-	
+
 	processingTime := time.Since(startTime)
-	
+
 	if err != nil {
 		// Create detailed error with context
 		cliError := errors.NewError(errors.ErrorTypeNetwork, errors.SeverityMedium, "Failed to execute lsof command").
 			WithCause(err).
 			WithComponent("monitor").
-			WithContext("command", "lsof -i tcp -n").
+			WithContext("command", "lsof -i tcp -i udp -n").
 			WithContext("processing_time", processingTime).
 			WithRecovery("Check if lsof is installed and accessible").
 			Build()
-		
+
 		if cm.errorHandler != nil {
 			cm.errorHandler.Submit(cliError)
 		}
-		
+
 		return nil, fmt.Errorf("lsof command failed: %v", err)
 	}
-	
+
 	if cm.logger != nil {
 		cm.logger.Debug("lsof command completed successfully in %v", processingTime)
 	}
-	
+
 	var connections []*Connection
 	scanner := bufio.NewScanner(strings.NewReader(string(output)))
 	lineCount := 0
@@ -316,7 +522,7 @@ func (cm *ConnectionMonitor) GetCurrentConnections() ([]*Connection, error) {
 	for scanner.Scan() {
 		line := scanner.Text()
 		lineCount++
-		
+
 		conn, err := cm.parseConnectionLineWithErrorHandling(line, lineCount)
 		if err != nil {
 			parseErrors++
@@ -337,14 +543,14 @@ func (cm *ConnectionMonitor) GetCurrentConnections() ([]*Connection, error) {
 			WithContext("lines_processed", lineCount).
 			WithContext("parse_errors", parseErrors).
 			Build()
-		
+
 		if cm.errorHandler != nil {
 			cm.errorHandler.Submit(cliError)
 		}
-		
+
 		return nil, fmt.Errorf("error reading lsof output: %v", err)
 	}
-	
+
 	// Log processing statistics
 	if cm.logger != nil {
 		cm.logger.InfoWithMetrics("Connection scan completed", map[string]interface{}{
@@ -355,7 +561,7 @@ func (cm *ConnectionMonitor) GetCurrentConnections() ([]*Connection, error) {
 			"error_rate":       float64(parseErrors) / float64(lineCount),
 		})
 	}
-	
+
 	// Warn if error rate is high
 	if lineCount > 0 && float64(parseErrors)/float64(lineCount) > 0.1 {
 		if cm.logger != nil {
@@ -384,11 +590,11 @@ func (cm *ConnectionMonitor) parseConnectionLineWithErrorHandling(line string, l
 			cliError.Context = make(map[string]interface{})
 		}
 		cliError.Context["line_number"] = lineNumber
-		
+
 		if cm.errorHandler != nil {
 			cm.errorHandler.Submit(cliError)
 		}
-		
+
 		return nil, err
 	}
 	return conn, nil
@@ -399,15 +605,15 @@ func (cm *ConnectionMonitor) StartMonitoring(ctx context.Context, interval time.
 	if cm.logger != nil {
 		cm.logger.Info("Starting network monitoring with %v interval", interval)
 	}
-	
+
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	
+
 	// Performance monitoring variables
 	var consecutiveErrors int
 	const baseInterval = 2 * time.Second
 	const maxInterval = 30 * time.Second
-	
+
 	// Statistics tracking
 	stats := struct {
 		totalScans       int
@@ -432,18 +638,18 @@ func (cm *ConnectionMonitor) StartMonitoring(ctx context.Context, interval time.
 				})
 			}
 			return ctx.Err()
-			
+
 		case <-ticker.C:
 			stats.totalScans++
 			scanStartTime := time.Now()
-			
+
 			connections, err := cm.GetCurrentConnections()
 			scanDuration := time.Since(scanStartTime)
-			
+
 			if err != nil {
 				consecutiveErrors++
 				stats.totalErrors++
-				
+
 				if cm.logger != nil {
 					cm.logger.ErrorWithDetails(err, "Monitor scan failed", map[string]interface{}{
 						"consecutive_errors": consecutiveErrors,
@@ -451,7 +657,7 @@ func (cm *ConnectionMonitor) StartMonitoring(ctx context.Context, interval time.
 						"scan_number":       stats.totalScans,
 					})
 				}
-				
+
 				// Create monitor error for error handling system
 				monitorError := errors.NewMonitorError(
 					fmt.Sprintf("Monitoring scan #%d failed", stats.totalScans),
@@ -463,7 +669,7 @@ func (cm *ConnectionMonitor) StartMonitoring(ctx context.Context, interval time.
 				}
 				monitorError.Context["consecutive_errors"] = consecutiveErrors
 				monitorError.Context["scan_duration"] = scanDuration
-				
+
 				if consecutiveErrors >= cm.maxConsecutiveErrs {
 					monitorError.Severity = errors.SeverityCritical
 					if cm.errorHandler != nil {
@@ -471,11 +677,11 @@ func (cm *ConnectionMonitor) StartMonitoring(ctx context.Context, interval time.
 					}
 					return fmt.Errorf("too many consecutive monitoring errors (%d): %v", consecutiveErrors, err)
 				}
-				
+
 				if cm.errorHandler != nil {
 					cm.errorHandler.Submit(monitorError)
 				}
-				
+
 				// Adaptive backoff on errors
 				if consecutiveErrors > 2 {
 					newInterval := time.Duration(float64(interval) * 1.5)
@@ -492,7 +698,7 @@ func (cm *ConnectionMonitor) StartMonitoring(ctx context.Context, interval time.
 				}
 				continue
 			}
-			
+
 			// Reset error counter on success
 			if consecutiveErrors > 0 {
 				if cm.logger != nil {
@@ -510,7 +716,7 @@ func (cm *ConnectionMonitor) StartMonitoring(ctx context.Context, interval time.
 					stats.totalConnections++
 				}
 			}
-			
+
 			// Cleanup with error handling
 			if err := cm.performAdaptiveCleanup(); err != nil {
 				if cm.logger != nil {
@@ -520,7 +726,7 @@ func (cm *ConnectionMonitor) StartMonitoring(ctx context.Context, interval time.
 					)
 				}
 			}
-			
+
 			// Performance logging for significant events
 			if newConnectionsFound > 0 || scanDuration > 500*time.Millisecond {
 				if cm.logger != nil {
@@ -540,12 +746,29 @@ func (cm *ConnectionMonitor) StartMonitoring(ctx context.Context, interval time.
 // processNewConnection handles new connection detection with error handling
 func (cm *ConnectionMonitor) processNewConnection(conn *Connection) bool {
 	connKey := cm.getConnectionKey(conn)
-	
+
 	if _, exists := cm.connections[connKey]; !exists && cm.isOutboundConnection(conn) {
+		// Check the recent cache — if this connection was cleaned up but reappeared
+		// within the TTL window, skip the callback to avoid re-prompting.
+		recentKey := conn.ProcessName + ":" + conn.RemoteAddr + ":" + conn.RemotePort
+		if cm.recentCache.get(recentKey) {
+			// Still tracked in the recent cache; re-add to the connections map
+			// but do not fire the callback again.
+			cm.connections[connKey] = conn
+			cm.connectionCount++
+			return false
+		}
+
+		// Record in the recent cache so future reappearances are suppressed.
+		cm.recentCache.put(recentKey)
+
+		// Perform reverse DNS lookup for the remote address
+		conn.ResolvedHost = ReverseLookup(conn.RemoteAddr)
+
 		// New outbound connection detected
 		cm.connections[connKey] = conn
 		cm.connectionCount++
-		
+
 		// Prevent memory exhaustion with error reporting
 		if cm.connectionCount > cm.maxConnections {
 			if cm.logger != nil {
@@ -554,14 +777,14 @@ func (cm *ConnectionMonitor) processNewConnection(conn *Connection) bool {
 					"Consider increasing maxConnections or reducing cleanup interval",
 				)
 			}
-			
+
 			if err := cm.forceCleanupOldConnections(); err != nil {
 				if cm.logger != nil {
 					cm.logger.Error("Force cleanup failed: %v", err)
 				}
 			}
 		}
-		
+
 		// Call callback with error handling
 		if cm.newConnCallback != nil {
 			defer func() {
@@ -571,10 +794,10 @@ func (cm *ConnectionMonitor) processNewConnection(conn *Connection) bool {
 					}
 				}
 			}()
-			
+
 			cm.newConnCallback(conn)
 		}
-		
+
 		return true // New connection processed
 	}
 	return false // Not a new connection
@@ -589,7 +812,7 @@ func (cm *ConnectionMonitor) performAdaptiveCleanup() error {
 			}
 		}
 	}()
-	
+
 	cm.adaptiveCleanup()
 	return nil
 }
@@ -599,11 +822,11 @@ func (cm *ConnectionMonitor) cleanupOldConnections() error {
 	startTime := time.Now()
 	cutoff := time.Now().Add(-5 * time.Minute)
 	cleaned := 0
-	
+
 	if cm.logger != nil {
 		cm.logger.Debug("Starting cleanup of connections older than 5 minutes")
 	}
-	
+
 	defer func() {
 		if r := recover(); r != nil {
 			if cm.logger != nil {
@@ -611,7 +834,7 @@ func (cm *ConnectionMonitor) cleanupOldConnections() error {
 			}
 		}
 	}()
-	
+
 	for key, conn := range cm.connections {
 		if conn.Timestamp.Before(cutoff) {
 			delete(cm.connections, key)
@@ -619,10 +842,10 @@ func (cm *ConnectionMonitor) cleanupOldConnections() error {
 			cleaned++
 		}
 	}
-	
+
 	cm.lastCleanup = time.Now()
 	cleanupDuration := time.Since(startTime)
-	
+
 	if cleaned > 0 {
 		if cm.logger != nil {
 			cm.logger.InfoWithMetrics("Connection cleanup completed", map[string]interface{}{
@@ -637,7 +860,7 @@ func (cm *ConnectionMonitor) cleanupOldConnections() error {
 			cm.logger.Debug("No connections required cleanup (duration: %v)", cleanupDuration)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -651,14 +874,20 @@ func (cm *ConnectionMonitor) isOutboundConnection(conn *Connection) bool {
 	return conn.State == "ESTABLISHED" && conn.RemoteAddr != "" && conn.RemoteAddr != "*"
 }
 
+// connKeyTimestamp is a helper struct for sorting connections by timestamp
+type connKeyTimestamp struct {
+	key       string
+	timestamp time.Time
+}
+
 // forceCleanupOldConnections forces a cleanup when memory limits are reached
 func (cm *ConnectionMonitor) forceCleanupOldConnections() error {
 	startTime := time.Now()
-	
+
 	if cm.logger != nil {
 		cm.logger.Warn("Starting force cleanup due to memory limits")
 	}
-	
+
 	defer func() {
 		if r := recover(); r != nil {
 			if cm.logger != nil {
@@ -666,11 +895,11 @@ func (cm *ConnectionMonitor) forceCleanupOldConnections() error {
 			}
 		}
 	}()
-	
+
 	// More aggressive cleanup - remove connections older than 2 minutes
 	cutoff := time.Now().Add(-2 * time.Minute)
 	cleaned := 0
-	
+
 	for key, conn := range cm.connections {
 		if conn.Timestamp.Before(cutoff) {
 			delete(cm.connections, key)
@@ -678,43 +907,36 @@ func (cm *ConnectionMonitor) forceCleanupOldConnections() error {
 			cleaned++
 		}
 	}
-	
-	// If still too many, remove oldest 20%
+
+	// If still too many, remove oldest 20% using sort instead of O(n^2) iteration
 	if cm.connectionCount > cm.maxConnections {
 		if cm.logger != nil {
-			cm.logger.Warn("Still over limit after aggressive cleanup, removing oldest 20%")
+			cm.logger.Warn("Still over limit after aggressive cleanup, removing oldest 20%%")
 		}
-		
-		connectionsToRemove := make([]*Connection, 0, len(cm.connections))
-		for _, conn := range cm.connections {
-			connectionsToRemove = append(connectionsToRemove, conn)
+
+		// Collect all connections with their keys into a slice
+		connSlice := make([]connKeyTimestamp, 0, len(cm.connections))
+		for key, conn := range cm.connections {
+			connSlice = append(connSlice, connKeyTimestamp{key: key, timestamp: conn.Timestamp})
 		}
-		
-		// Remove oldest 20%
-		removeCount := len(connectionsToRemove) / 5
-		for i := 0; i < removeCount && len(cm.connections) > 0; i++ {
-			// Find and remove oldest connection
-			oldestKey := ""
-			var oldestTime time.Time
-			
-			for key, conn := range cm.connections {
-				if oldestKey == "" || conn.Timestamp.Before(oldestTime) {
-					oldestKey = key
-					oldestTime = conn.Timestamp
-				}
-			}
-			
-			if oldestKey != "" {
-				delete(cm.connections, oldestKey)
-				cm.connectionCount--
-				cleaned++
-			}
+
+		// Sort by timestamp ascending (oldest first)
+		sort.Slice(connSlice, func(i, j int) bool {
+			return connSlice[i].timestamp.Before(connSlice[j].timestamp)
+		})
+
+		// Remove oldest 20% in one pass
+		removeCount := len(connSlice) / 5
+		for i := 0; i < removeCount; i++ {
+			delete(cm.connections, connSlice[i].key)
+			cm.connectionCount--
+			cleaned++
 		}
 	}
-	
+
 	cm.lastCleanup = time.Now()
 	cleanupDuration := time.Since(startTime)
-	
+
 	if cm.logger != nil {
 		cm.logger.InfoWithMetrics("Force cleanup completed", map[string]interface{}{
 			"cleaned_connections": cleaned,
@@ -723,18 +945,18 @@ func (cm *ConnectionMonitor) forceCleanupOldConnections() error {
 			"still_over_limit": cm.connectionCount > cm.maxConnections,
 		})
 	}
-	
+
 	// Check if we're still over the limit
 	if cm.connectionCount > cm.maxConnections {
-		err := fmt.Errorf("force cleanup failed to reduce connections below limit: %d > %d", 
+		err := fmt.Errorf("force cleanup failed to reduce connections below limit: %d > %d",
 			cm.connectionCount, cm.maxConnections)
-		
+
 		if cm.logger != nil {
 			cm.logger.Error("Force cleanup insufficient: %v", err)
 		}
-		
+
 		// Create system error for critical memory condition
-		cliError := errors.NewError(errors.ErrorTypeSystem, errors.SeverityCritical, 
+		cliError := errors.NewError(errors.ErrorTypeSystem, errors.SeverityCritical,
 			"Memory management failure: unable to reduce connection count").
 			WithCause(err).
 			WithComponent("monitor").
@@ -743,14 +965,14 @@ func (cm *ConnectionMonitor) forceCleanupOldConnections() error {
 			WithContext("cleaned_count", cleaned).
 			WithRecovery("Restart monitoring service or increase memory limits").
 			Build()
-		
+
 		if cm.errorHandler != nil {
 			cm.errorHandler.Submit(cliError)
 		}
-		
+
 		return err
 	}
-	
+
 	return nil
 }
 
@@ -763,31 +985,31 @@ func (cm *ConnectionMonitor) adaptiveCleanup() error {
 			}
 		}
 	}()
-	
+
 	timeSinceLastCleanup := time.Since(cm.lastCleanup)
-	
+
 	// Adaptive cleanup frequency based on connection count
 	var cleanupInterval time.Duration
 	switch {
 	case cm.connectionCount > 5000:
 		cleanupInterval = 30 * time.Second  // High activity
 	case cm.connectionCount > 1000:
-		cleanupInterval = 2 * time.Minute   // Medium activity  
+		cleanupInterval = 2 * time.Minute   // Medium activity
 	default:
 		cleanupInterval = 5 * time.Minute   // Low activity
 	}
-	
+
 	if cm.logger != nil {
-		cm.logger.Debug("Adaptive cleanup check: %d connections, %v since last cleanup, %v interval", 
+		cm.logger.Debug("Adaptive cleanup check: %d connections, %v since last cleanup, %v interval",
 			cm.connectionCount, timeSinceLastCleanup, cleanupInterval)
 	}
-	
+
 	if timeSinceLastCleanup >= cleanupInterval {
 		if cm.logger != nil {
 			cm.logger.Debug("Triggering adaptive cleanup (interval: %v)", cleanupInterval)
 		}
 		return cm.cleanupOldConnections()
 	}
-	
+
 	return nil
-} 
+}

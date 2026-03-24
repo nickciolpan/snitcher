@@ -47,24 +47,24 @@ func NewConnectionCache(maxSize int, ttl time.Duration) *ConnectionCache {
 
 // Get retrieves a connection from cache with O(1) lookup
 func (cc *ConnectionCache) Get(key string) (*monitor.Connection, bool) {
-	cc.mu.RLock()
-	defer cc.mu.RUnlock()
-	
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+
 	cached, exists := cc.connections[key]
 	if !exists {
 		return nil, false
 	}
-	
+
 	// Check TTL
 	if time.Since(cached.LastAccessed) > cc.ttl {
-		// Don't remove here to avoid write lock, will be cleaned up later
+		// Don't remove here, will be cleaned up later
 		return nil, false
 	}
-	
-	// Update access info (this is safe in read lock since we're modifying the cached object)
+
+	// Update access info
 	cached.LastAccessed = time.Now()
 	cached.AccessCount++
-	
+
 	return cached.Connection, true
 }
 

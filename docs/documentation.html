@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Documentation - CLI Snitch</title>
+    <meta name="description" content="Complete guide to installing, configuring, and using CLI Snitch for macOS network monitoring.">
+    <style>
+        :root {
+            --bg: #0a0a0f;
+            --surface: #12121a;
+            --border: #1e1e2e;
+            --text: #e4e4ef;
+            --muted: #7a7a8e;
+            --accent: #6ee7b7;
+            --accent2: #38bdf8;
+            --deny: #f87171;
+            --warn: #fbbf24;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* NAV */
+        nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            background: rgba(10, 10, 15, 0.85);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+        }
+
+        nav .nav-inner {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 0 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 64px;
+        }
+
+        .logo {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text);
+            text-decoration: none;
+        }
+
+        .logo span { color: var(--accent); }
+
+        .nav-links {
+            display: flex;
+            gap: 32px;
+            list-style: none;
+            align-items: center;
+        }
+
+        .nav-links a {
+            color: var(--muted);
+            text-decoration: none;
+            font-size: 14px;
+            transition: color 0.2s;
+        }
+
+        .nav-links a:hover, .nav-links a.active { color: var(--text); }
+
+        .nav-cta {
+            background: var(--accent);
+            color: var(--bg);
+            padding: 8px 20px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        /* LAYOUT */
+        .page {
+            display: flex;
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 88px 24px 80px;
+            gap: 48px;
+        }
+
+        /* SIDEBAR */
+        .sidebar {
+            width: 220px;
+            flex-shrink: 0;
+            position: sticky;
+            top: 88px;
+            align-self: flex-start;
+            max-height: calc(100vh - 112px);
+            overflow-y: auto;
+        }
+
+        .sidebar-group {
+            margin-bottom: 28px;
+        }
+
+        .sidebar-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--accent);
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .sidebar-link {
+            display: block;
+            padding: 5px 0;
+            font-size: 13px;
+            color: var(--muted);
+            text-decoration: none;
+            transition: color 0.15s;
+        }
+
+        .sidebar-link:hover { color: var(--text); }
+
+        /* CONTENT */
+        .content {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .content h1 {
+            font-size: 36px;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            margin-bottom: 12px;
+        }
+
+        .content > .subtitle {
+            font-size: 16px;
+            color: var(--muted);
+            margin-bottom: 48px;
+            line-height: 1.7;
+        }
+
+        .content h2 {
+            font-size: 22px;
+            font-weight: 700;
+            margin-top: 56px;
+            margin-bottom: 16px;
+            padding-top: 24px;
+            border-top: 1px solid var(--border);
+            letter-spacing: -0.01em;
+        }
+
+        .content h2:first-of-type {
+            margin-top: 0;
+            border-top: none;
+            padding-top: 0;
+        }
+
+        .content h3 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-top: 32px;
+            margin-bottom: 10px;
+        }
+
+        .content p {
+            color: var(--muted);
+            margin-bottom: 16px;
+            font-size: 15px;
+            line-height: 1.7;
+        }
+
+        .content ul, .content ol {
+            color: var(--muted);
+            margin-bottom: 16px;
+            padding-left: 20px;
+            font-size: 15px;
+            line-height: 1.8;
+        }
+
+        .content li { margin-bottom: 4px; }
+
+        .content strong { color: var(--text); font-weight: 600; }
+
+        .content code {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 13px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: var(--accent);
+        }
+
+        pre {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 20px 24px;
+            margin-bottom: 20px;
+            overflow-x: auto;
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 13px;
+            line-height: 1.7;
+            color: var(--text);
+        }
+
+        pre .comment { color: #555568; }
+        pre .cmd { color: var(--accent); }
+        pre .flag { color: var(--accent2); }
+        pre .str { color: var(--warn); }
+        pre .output { color: var(--muted); }
+
+        .callout {
+            background: var(--surface);
+            border-left: 3px solid var(--accent);
+            border-radius: 0 8px 8px 0;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: var(--muted);
+        }
+
+        .callout.warn {
+            border-left-color: var(--warn);
+        }
+
+        .callout strong { color: var(--text); }
+
+        .cmd-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .cmd-table th {
+            text-align: left;
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border);
+            color: var(--muted);
+            font-weight: 500;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .cmd-table td {
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border);
+            color: var(--muted);
+        }
+
+        .cmd-table td:first-child {
+            font-family: 'SF Mono', monospace;
+            color: var(--accent);
+            white-space: nowrap;
+            font-size: 13px;
+        }
+
+        /* RESPONSIVE */
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .page { padding-top: 80px; }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <div class="nav-inner">
+            <a href="index.html" class="logo"><span>$</span> cli-snitch</a>
+            <ul class="nav-links">
+                <li><a href="index.html">Home</a></li>
+                <li><a href="documentation.html" class="active">Docs</a></li>
+                <li><a href="https://github.com/nickciolpan/cli-snitch" class="nav-cta">GitHub</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="page">
+        <aside class="sidebar">
+            <div class="sidebar-group">
+                <div class="sidebar-label">Getting Started</div>
+                <a href="#installation" class="sidebar-link">Installation</a>
+                <a href="#prerequisites" class="sidebar-link">Prerequisites</a>
+                <a href="#quick-start" class="sidebar-link">Quick Start</a>
+            </div>
+            <div class="sidebar-group">
+                <div class="sidebar-label">Core Usage</div>
+                <a href="#monitoring" class="sidebar-link">Monitoring Connections</a>
+                <a href="#decisions" class="sidebar-link">Making Decisions</a>
+                <a href="#rules" class="sidebar-link">Managing Rules</a>
+                <a href="#wildcards" class="sidebar-link">Wildcard Patterns</a>
+            </div>
+            <div class="sidebar-group">
+                <div class="sidebar-label">Firewall</div>
+                <a href="#firewall" class="sidebar-link">Firewall Integration</a>
+                <a href="#firewall-commands" class="sidebar-link">Firewall Commands</a>
+            </div>
+            <div class="sidebar-group">
+                <div class="sidebar-label">Advanced</div>
+                <a href="#history" class="sidebar-link">Connection History</a>
+                <a href="#import-export" class="sidebar-link">Import &amp; Export</a>
+                <a href="#daemon" class="sidebar-link">Daemon Mode</a>
+                <a href="#config" class="sidebar-link">Configuration</a>
+            </div>
+            <div class="sidebar-group">
+                <div class="sidebar-label">Reference</div>
+                <a href="#commands" class="sidebar-link">All Commands</a>
+                <a href="#process-names" class="sidebar-link">Process Names</a>
+                <a href="#troubleshooting" class="sidebar-link">Troubleshooting</a>
+            </div>
+        </aside>
+
+        <main class="content">
+            <h1>Documentation</h1>
+            <p class="subtitle">Everything you need to install, configure, and use CLI Snitch to monitor and control network connections on macOS.</p>
+
+            <h2 id="installation">Installation</h2>
+
+            <h3>Homebrew (recommended)</h3>
+<pre><span class="cmd">brew tap</span> nickciolpan/tap
+<span class="cmd">brew install</span> cli-snitch</pre>
+
+            <h3>GitHub Releases</h3>
+            <p>Download the latest binary for your architecture from <a href="https://github.com/nickciolpan/cli-snitch/releases" style="color: var(--accent)">GitHub Releases</a>, then:</p>
+<pre><span class="cmd">tar</span> <span class="flag">-xzf</span> cli-snitch-v2.0.0-darwin-arm64.tar.gz
+<span class="cmd">sudo mv</span> cli-snitch /usr/local/bin/
+<span class="cmd">chmod</span> +x /usr/local/bin/cli-snitch</pre>
+
+            <h3>Build from source</h3>
+<pre><span class="cmd">git clone</span> https://github.com/nickciolpan/cli-snitch
+<span class="cmd">cd</span> cli-snitch
+<span class="cmd">make</span> build
+<span class="comment"># Binary is at ./cli-snitch</span></pre>
+
+            <h2 id="prerequisites">Prerequisites</h2>
+            <ul>
+                <li><strong>macOS</strong> (tested on Sonoma and later)</li>
+                <li><strong>Root privileges</strong> &mdash; required for <code>watch</code>, firewall, and daemon commands</li>
+                <li><strong>Go 1.19+</strong> &mdash; only if building from source</li>
+            </ul>
+
+            <h2 id="quick-start">Quick Start</h2>
+            <p>Start monitoring in three commands:</p>
+<pre><span class="comment"># 1. Install</span>
+<span class="cmd">brew install</span> nickciolpan/tap/cli-snitch
+
+<span class="comment"># 2. Start monitoring (requires sudo)</span>
+<span class="cmd">sudo</span> cli-snitch watch
+
+<span class="comment"># 3. That's it. You'll see prompts for every new connection.</span></pre>
+
+            <div class="callout">
+                <strong>Tip:</strong> CLI Snitch monitors both TCP and UDP connections. The first scan may show many connections &mdash; after you make decisions, subsequent scans will be quiet since rules are applied automatically.
+            </div>
+
+            <h2 id="monitoring">Monitoring Connections</h2>
+            <p>The <code>watch</code> command starts real-time monitoring. It scans active connections every 2 seconds using <code>lsof</code>.</p>
+<pre><span class="cmd">sudo</span> cli-snitch watch</pre>
+            <p>When a new outbound connection is detected that doesn't match any rule, you'll see a detailed prompt:</p>
+<pre><span class="output">&#x1F6A8; New Outbound Connection Detected
+&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;
+  Application: Google Chrome
+  Destination:  telemetry.example.com:443
+  Protocol:     TCP
+  Host Info:    Amazon Web Services (AWS)
+
+? What would you like to do with this connection?
+&gt; Allow Once
+  Allow Always
+  Deny Once
+  Deny Always</span></pre>
+
+            <p>Connections that match existing rules are handled automatically:</p>
+<pre><span class="output">&#x2705; claude ALLOWED -> 160.79.104.10:443 [Allow all claude connections]
+&#x274C; Google DENIED -> 142.251.31.188:443 [Block Google Chrome]
+&#x2705; Mail ALLOWED -> 17.57.144.50:993 [Allow Mail]</span></pre>
+
+            <p>Press <strong>Ctrl+C</strong> to stop. CLI Snitch performs cleanup, saves rules, and displays session statistics.</p>
+
+            <h2 id="decisions">Making Decisions</h2>
+            <p>Each prompt offers four choices:</p>
+
+            <table class="cmd-table">
+                <tr><th>Choice</th><th>What it does</th></tr>
+                <tr><td>Allow Once</td><td>Permit this connection. No rule saved. Won't apply to future connections.</td></tr>
+                <tr><td>Allow Always</td><td>Permit and create a persistent rule. You choose the scope next.</td></tr>
+                <tr><td>Deny Once</td><td>Block this connection. Creates a temporary pfctl rule (expires in 24h).</td></tr>
+                <tr><td>Deny Always</td><td>Block and create a persistent pfctl rule + saved rule. You choose the scope next.</td></tr>
+            </table>
+
+            <h3>Rule Scopes</h3>
+            <p>For persistent decisions (Allow/Deny Always), you choose how broad the rule should be:</p>
+
+            <table class="cmd-table">
+                <tr><th>Scope</th><th>Matches</th><th>Example</th></tr>
+                <tr><td>Exact</td><td>Process + host + port</td><td>Chrome to ads.tracker.com:443 only</td></tr>
+                <tr><td>Process + Host</td><td>Process + host, any port</td><td>Chrome to ads.tracker.com on any port</td></tr>
+                <tr><td>Process + Port</td><td>Process + port, any host</td><td>Chrome to any host on port 443</td></tr>
+                <tr><td>Process Only</td><td>All connections from process</td><td>Block everything from Chrome</td></tr>
+            </table>
+
+            <h2 id="rules">Managing Rules</h2>
+
+            <h3>List rules</h3>
+<pre><span class="cmd">cli-snitch</span> list-rules
+
+<span class="output">&#x1F4CB; Found 3 rules:
+
+allow claude Allow all claude connections
+    Scope: process | ID: allow-claude
+    Created: 2026-03-24 10:00:00 | Used: 42 times
+
+deny Google Block Google Chrome
+    Scope: process | ID: deny-google
+    Created: 2026-03-24 10:00:00 | Used: 17 times</span></pre>
+
+            <h3>Edit a rule</h3>
+            <p>Change any field of an existing rule by its ID:</p>
+<pre><span class="comment"># Change a deny to allow</span>
+<span class="cmd">cli-snitch</span> edit-rule deny-google <span class="flag">--action</span> allow
+
+<span class="comment"># Update description and add a host pattern</span>
+<span class="cmd">cli-snitch</span> edit-rule my-rule <span class="flag">--description</span> <span class="str">"Updated rule"</span> <span class="flag">--pattern</span> <span class="str">"*.example.com"</span>
+
+<span class="comment"># Available flags: --action, --description, --host, --port, --pattern</span></pre>
+
+            <h3>Clear all rules</h3>
+<pre><span class="cmd">cli-snitch</span> clear-rules
+<span class="output">&#x26A0;&#xFE0F; This will delete all 3 rules. Are you sure? (y/N): y
+&#x2705; All rules cleared.</span></pre>
+
+            <h2 id="wildcards">Wildcard Patterns</h2>
+            <p>Rules support glob patterns for flexible host matching. The <code>pattern</code> field uses Go's <code>filepath.Match</code> syntax:</p>
+
+            <table class="cmd-table">
+                <tr><th>Pattern</th><th>Matches</th></tr>
+                <tr><td>*.google.com</td><td>www.google.com, apis.google.com, etc.</td></tr>
+                <tr><td>*.cdn.*</td><td>assets.cdn.example, img.cdn.net, etc.</td></tr>
+                <tr><td>10.0.*.*</td><td>Any IP in the 10.0.x.x range</td></tr>
+            </table>
+
+            <p>Add a pattern when editing a rule:</p>
+<pre><span class="cmd">cli-snitch</span> edit-rule my-rule <span class="flag">--pattern</span> <span class="str">"*.analytics.com"</span></pre>
+
+            <p>Or include it in an imported JSON rule file (see <a href="#import-export" style="color: var(--accent)">Import &amp; Export</a>).</p>
+
+            <h2 id="firewall">Firewall Integration</h2>
+            <p>When you deny a connection, CLI Snitch creates a real <code>pfctl</code> rule in the macOS packet filter. This blocks the connection at the kernel level &mdash; not just in the CLI.</p>
+
+            <div class="callout warn">
+                <strong>Root required.</strong> Firewall operations need <code>sudo</code>. Without root, CLI Snitch runs in monitoring-only mode.
+            </div>
+
+            <p>Rules are isolated in a pfctl anchor (<code>cli-snitch</code>) so they never conflict with your system firewall rules. Example generated rules:</p>
+<pre><span class="output">block out proto tcp from any to malicious.com port 443
+block out proto tcp from any to ads.tracker.com
+block out proto tcp from any to any port 80</span></pre>
+
+            <p>All host and port values are validated with regex before being passed to pfctl, preventing command injection.</p>
+
+            <h2 id="firewall-commands">Firewall Commands</h2>
+
+<pre><span class="comment"># Check pfctl integration status</span>
+<span class="cmd">sudo</span> cli-snitch firewall-status
+
+<span class="comment"># List active blocking rules in pfctl</span>
+<span class="cmd">sudo</span> cli-snitch list-firewall
+
+<span class="comment"># Remove expired temporary rules (from "Deny Once")</span>
+<span class="cmd">sudo</span> cli-snitch firewall-cleanup
+
+<span class="comment"># Remove ALL CLI Snitch rules from pfctl</span>
+<span class="cmd">sudo</span> cli-snitch clear-firewall
+
+<span class="comment"># Live firewall status feed (Ctrl+C to stop)</span>
+<span class="cmd">sudo</span> cli-snitch firewall-monitor</pre>
+
+            <h2 id="history">Connection History</h2>
+            <p>Every allow/deny decision is logged to <code>~/.cli-snitch/history.jsonl</code>. View it with:</p>
+<pre><span class="comment"># Last 50 entries (default)</span>
+<span class="cmd">cli-snitch</span> history
+
+<span class="comment"># Last 10 entries</span>
+<span class="cmd">cli-snitch</span> history <span class="flag">-n</span> 10
+
+<span class="comment"># Only denied connections</span>
+<span class="cmd">cli-snitch</span> history <span class="flag">--action</span> denied
+
+<span class="comment"># Only connections from a specific process</span>
+<span class="cmd">cli-snitch</span> history <span class="flag">--process</span> Google
+
+<span class="comment"># Combine filters</span>
+<span class="cmd">cli-snitch</span> history <span class="flag">--process</span> Google <span class="flag">--action</span> denied <span class="flag">-n</span> 100</pre>
+
+            <p>Example output:</p>
+<pre><span class="output">&#x1F4DC; Connection History (17 entries):
+
+2026-03-24 12:53:56 &#x274C; Google denied -> 140.82.114.26:443
+2026-03-24 12:53:56 &#x274C; Google denied -> 54.73.83.130:443
+2026-03-24 12:53:56 &#x274C; Google denied -> 18.245.86.25:443
+2026-03-24 12:53:57 &#x2705; claude allowed -> 34.149.66.137:443
+2026-03-24 12:53:57 &#x2705; Cursor allowed -> 104.18.18.125:443</span></pre>
+
+            <h2 id="import-export">Import &amp; Export Rules</h2>
+
+            <h3>Export</h3>
+            <p>Back up your rules to a JSON file:</p>
+<pre><span class="cmd">cli-snitch</span> export-rules <span class="str">my-rules.json</span></pre>
+
+            <h3>Import</h3>
+            <p>Load rules from a JSON file. By default this <strong>replaces</strong> all existing rules:</p>
+<pre><span class="comment"># Replace all rules</span>
+<span class="cmd">cli-snitch</span> import-rules <span class="str">my-rules.json</span>
+
+<span class="comment"># Merge with existing rules</span>
+<span class="cmd">cli-snitch</span> import-rules <span class="str">my-rules.json</span> <span class="flag">--merge</span></pre>
+
+            <h3>Rule JSON format</h3>
+<pre>[
+  {
+    <span class="str">"id"</span>: <span class="str">"block-tracking"</span>,
+    <span class="str">"process_name"</span>: <span class="str">"Google"</span>,
+    <span class="str">"host"</span>: <span class="str">"analytics.google.com"</span>,
+    <span class="str">"port"</span>: <span class="str">"443"</span>,
+    <span class="str">"pattern"</span>: <span class="str">"*.analytics.*"</span>,
+    <span class="str">"action"</span>: <span class="str">"deny"</span>,
+    <span class="str">"scope"</span>: <span class="str">"process_host"</span>,
+    <span class="str">"description"</span>: <span class="str">"Block Google analytics"</span>
+  }
+]</pre>
+
+            <div class="callout">
+                <strong>Scope values:</strong> <code>process</code>, <code>process_host</code>, <code>process_port</code>, <code>exact</code><br>
+                <strong>Action values:</strong> <code>allow</code>, <code>deny</code>, <code>allow_once</code>, <code>deny_once</code>
+            </div>
+
+            <h2 id="daemon">Daemon Mode</h2>
+            <p>Run CLI Snitch as a background service via macOS launchd:</p>
+<pre><span class="comment"># Install the launchd plist</span>
+<span class="cmd">sudo</span> cli-snitch daemon install
+
+<span class="comment"># Start the daemon</span>
+<span class="cmd">sudo</span> cli-snitch daemon start
+
+<span class="comment"># Check if it's running</span>
+<span class="cmd">sudo</span> cli-snitch daemon status
+
+<span class="comment"># Stop</span>
+<span class="cmd">sudo</span> cli-snitch daemon stop
+
+<span class="comment"># Remove completely</span>
+<span class="cmd">sudo</span> cli-snitch daemon uninstall</pre>
+
+            <p>When running as a daemon, logs go to <code>~/.cli-snitch/daemon.log</code>. Since there's no terminal for interactive prompts, unknown connections default to "Allow Once".</p>
+
+            <h2 id="config">Configuration</h2>
+            <p>CLI Snitch stores all data in <code>~/.cli-snitch/</code>:</p>
+
+            <table class="cmd-table">
+                <tr><th>File</th><th>Purpose</th></tr>
+                <tr><td>rules.json</td><td>Persistent allow/deny rules</td></tr>
+                <tr><td>history.jsonl</td><td>Connection decision log (JSON Lines)</td></tr>
+                <tr><td>daemon.log</td><td>Daemon stdout (when running as service)</td></tr>
+                <tr><td>daemon.err.log</td><td>Daemon stderr</td></tr>
+            </table>
+
+            <p>Firewall state is stored at:</p>
+            <table class="cmd-table">
+                <tr><th>File</th><th>Purpose</th></tr>
+                <tr><td>/etc/pf.anchors/cli-snitch</td><td>pfctl anchor rules</td></tr>
+                <tr><td>/etc/pf.cli-snitch.conf</td><td>pfctl config that loads the anchor</td></tr>
+            </table>
+
+            <h2 id="commands">All Commands</h2>
+
+            <table class="cmd-table">
+                <tr><th>Command</th><th>Sudo</th><th>Description</th></tr>
+                <tr><td>watch</td><td>Yes</td><td>Start real-time connection monitoring</td></tr>
+                <tr><td>list-rules</td><td>No</td><td>Display all saved rules</td></tr>
+                <tr><td>edit-rule &lt;id&gt;</td><td>No</td><td>Modify an existing rule</td></tr>
+                <tr><td>clear-rules</td><td>No</td><td>Delete all rules (with confirmation)</td></tr>
+                <tr><td>import-rules &lt;file&gt;</td><td>No</td><td>Import rules from JSON</td></tr>
+                <tr><td>export-rules &lt;file&gt;</td><td>No</td><td>Export rules to JSON</td></tr>
+                <tr><td>history</td><td>No</td><td>View connection decision history</td></tr>
+                <tr><td>firewall-status</td><td>No*</td><td>Show pfctl integration status</td></tr>
+                <tr><td>list-firewall</td><td>Yes</td><td>List active pfctl rules</td></tr>
+                <tr><td>clear-firewall</td><td>Yes</td><td>Remove all pfctl rules</td></tr>
+                <tr><td>firewall-cleanup</td><td>Yes</td><td>Remove expired temporary rules</td></tr>
+                <tr><td>firewall-monitor</td><td>Yes</td><td>Live firewall status feed</td></tr>
+                <tr><td>system-status</td><td>No</td><td>System health and diagnostics</td></tr>
+                <tr><td>daemon install</td><td>Yes</td><td>Install launchd service</td></tr>
+                <tr><td>daemon start</td><td>Yes</td><td>Start background daemon</td></tr>
+                <tr><td>daemon stop</td><td>Yes</td><td>Stop background daemon</td></tr>
+                <tr><td>daemon uninstall</td><td>Yes</td><td>Remove launchd service</td></tr>
+                <tr><td>daemon status</td><td>No</td><td>Check daemon status</td></tr>
+            </table>
+
+            <h2 id="process-names">Process Names</h2>
+            <p>CLI Snitch uses process names from <code>lsof</code>, which truncates them to ~9 characters and may include escaped characters. Some common examples:</p>
+
+            <table class="cmd-table">
+                <tr><th>App</th><th>lsof name</th><th>Notes</th></tr>
+                <tr><td>Google Chrome</td><td>Google</td><td>Truncated from "Google Chrome Helper"</td></tr>
+                <tr><td>Slack</td><td>Slack\x20</td><td>Trailing escaped space</td></tr>
+                <tr><td>Figma</td><td>Figma\x20</td><td>Trailing escaped space</td></tr>
+                <tr><td>Docker</td><td>com.docke</td><td>Truncated bundle ID</td></tr>
+                <tr><td>Mail</td><td>Mail</td><td>Exact match</td></tr>
+                <tr><td>curl</td><td>curl</td><td>Exact match</td></tr>
+                <tr><td>DNS Resolver</td><td>mDNSRespo</td><td>Truncated</td></tr>
+            </table>
+
+            <div class="callout">
+                <strong>Tip:</strong> Run <code>sudo lsof -i tcp -i udp -n | awk '{print $1}' | sort -u</code> to see the exact process names on your machine. Use these names in your rules.
+            </div>
+
+            <h2 id="troubleshooting">Troubleshooting</h2>
+
+            <h3>"Error: CLI Snitch requires sudo privileges"</h3>
+            <p>The <code>watch</code> command needs root to run <code>lsof</code> with full visibility and manage pfctl. Run with <code>sudo</code>:</p>
+<pre><span class="cmd">sudo</span> cli-snitch watch</pre>
+
+            <h3>Prompt blocks other connections</h3>
+            <p>The interactive prompt is serialized &mdash; only one prompt shows at a time. While waiting for your decision, other new connections queue up. This is by design to prevent stdin collisions. If you find it overwhelming on first run, consider pre-loading rules for known apps via <code>import-rules</code>.</p>
+
+            <h3>Rules don't seem to match</h3>
+            <p>Check the exact process name with <code>lsof</code>. Matching is case-insensitive but the process name string must match exactly (including escaped characters like <code>\x20</code>).</p>
+
+            <h3>Firewall rules not applied</h3>
+            <p>Verify pfctl is available and the anchor is loaded:</p>
+<pre><span class="cmd">sudo</span> cli-snitch firewall-status
+<span class="cmd">sudo</span> cli-snitch system-status</pre>
+
+            <h3>Too many connections on first run</h3>
+            <p>Create a JSON file with allow rules for your common apps and import it before starting:</p>
+<pre><span class="cmd">cli-snitch</span> import-rules <span class="str">my-baseline-rules.json</span>
+<span class="cmd">sudo</span> cli-snitch watch</pre>
+
+        </main>
+    </div>
+</body>
+</html>
